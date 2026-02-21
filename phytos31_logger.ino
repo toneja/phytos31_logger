@@ -5,7 +5,10 @@
 //
 
 #include <Adafruit_ADS1X15.h>
+#include <bluefruit.h>
+
 Adafruit_ADS1115 ads;
+BLEUart bleuart;
 
 #define DEBUG 1
 
@@ -16,6 +19,21 @@ void setup() {
   Serial.println("Sample every 2 seconds...\n");
   ads.setGain(GAIN_FOUR); // 4x gain   +/- 1.024V  1 bit = 0.5mV
   ads.begin();
+  Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
+  Bluefruit.begin();
+  Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
+  Bluefruit.setName("PHYTOS 31 DATALOGGER");
+  Bluefruit.Periph.setConnectCallback(connect_callback);
+  Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+  bleuart.begin();
+  Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
+  Bluefruit.Advertising.addTxPower();
+  Bluefruit.Advertising.addService(bleuart);
+  Bluefruit.ScanResponse.addName();
+  Bluefruit.Advertising.restartOnDisconnect(true);
+  Bluefruit.Advertising.setInterval(32, 244);
+  Bluefruit.Advertising.setFastTimeout(30);
+  Bluefruit.Advertising.start(0);
 }
 
 void loop() {
@@ -34,5 +52,21 @@ void loop() {
   Serial.print("WETNESS PERCENTAGE: ");
   Serial.print(wetPercent);
   Serial.println("%");
+  bleuart.print(wetPercent);
   delay(2000);
+}
+
+void connect_callback(uint16_t conn_handle) {
+  BLEConnection* connection = Bluefruit.Connection(conn_handle);
+  char central_name[32] = { 0 };
+  connection->getPeerName(central_name, sizeof(central_name));
+  Serial.print("Connected to ");
+  Serial.println(central_name);
+}
+
+void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
+  (void) conn_handle;
+  (void) reason;
+  Serial.print("Disconnected, reason = 0x");
+  Serial.println(reason, HEX);
 }
