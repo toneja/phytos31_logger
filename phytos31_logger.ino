@@ -55,7 +55,7 @@ void ble_init(void) {
   Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
   Bluefruit.begin();
   Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
-  Bluefruit.setName("METER PHYTOS 31 DATALOGGER");
+  Bluefruit.setName("PHYTOS31 LOGGER");
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
   bleuart.begin();
