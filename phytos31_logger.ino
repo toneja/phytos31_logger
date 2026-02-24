@@ -16,6 +16,10 @@ SFE_UBLOX_GNSS g_myGNSS;
 
 #define DEBUG 0
 
+uint16_t sampling_freq = 2000;
+uint16_t new_freq;
+String buffer;
+
 int16_t adc0;
 double wetRaw;
 float wetPercent;
@@ -47,7 +51,8 @@ void loop() {
   ads_get();
   gps_gettime();
   log_data();
-  delay(2000);
+  if (bleuart.available()) { ble_get(); }
+  delay(sampling_freq);
 }
 
 void serial_init() {
@@ -56,7 +61,7 @@ void serial_init() {
   while (!Serial) { delay(100); }
 #endif
   Serial.println("*** PHYTOS 31 DATALOGGER ***");
-  Serial.println("Sample every 2 seconds...\n");
+  Serial.println("Sample every ~2 seconds...\n");
 }
 
 void sd_init(void) {
@@ -68,7 +73,7 @@ void sd_init(void) {
       logFile = SD.open("PHYTOS31.txt", FILE_WRITE);
       if (logFile) {
         logFile.println("*** PHYTOS 31 DATALOGGER ***");
-        logFile.println("Sample every 2 seconds...\n");
+        logFile.println("Sample every ~2 seconds...\n");
         logFile.flush();
       }
       return;
@@ -108,6 +113,26 @@ void ble_init(void) {
   Bluefruit.Advertising.setInterval(32, 244);
   Bluefruit.Advertising.setFastTimeout(30);
   Bluefruit.Advertising.start(0);
+}
+
+void ble_get(void) {
+  buffer = "";
+  while (bleuart.available()) { buffer += (char)bleuart.read(); }
+  new_freq = buffer.toInt();
+  if ((new_freq >= 1000) && (new_freq <= 10000)) {
+    sampling_freq = new_freq;
+    Serial.print("BLEUart: Updated sampling frequency: ");
+    Serial.print(sampling_freq);
+    Serial.println(" ms");
+    if (logFile) {
+      logFile.print(timestamp);
+      logFile.print(": ");
+      logFile.print("BLEUart: Updated sampling frequency: ");
+      logFile.print(sampling_freq);
+      logFile.println(" ms");
+      logFile.flush();
+    }
+  }
 }
 
 void connect_callback(uint16_t conn_handle) {
