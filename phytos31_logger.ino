@@ -3,6 +3,7 @@
 // Log data every 2 seconds; convert raw voltage output into % wetness
 // Voltage output range can be different for each invididual sensor(?)
 //
+#define DEBUG 0
 
 #include <Adafruit_ADS1X15.h>
 #include <bluefruit.h>
@@ -10,16 +11,8 @@
 #include <Wire.h>
 #include "SD.h"
 
+// ADC: ADS1115 -> PHYTOS31
 Adafruit_ADS1115 ads;
-BLEUart bleuart;
-SFE_UBLOX_GNSS g_myGNSS;
-
-#define DEBUG 0
-
-uint16_t sampling_freq = 2000;
-uint16_t new_freq;
-String buffer;
-
 int16_t adc0;
 double wetRaw;
 float wetPercent;
@@ -27,19 +20,25 @@ float wetPercent;
 float wetMin = 0.350000;
 // Observed maximum values: 1.023969, 1.105875
 float wetMax = 1.023969;
-String wetness;
+char wetness[8];
 
+// BLUETOOTH: control sample frequency
+BLEUart bleuart;
+uint16_t sampling_freq = 2000;
+uint16_t new_freq;
+String buffer;
+
+// GPS: log timestamps
+// RAK12002 RTC module would be better for this
+SFE_UBLOX_GNSS g_myGNSS;
+char timestamp[19];
+
+// Output files
 File csvFile;
 File logFile;
 
-char timestamp[19];
-
 void setup() {
-  pinMode(WB_IO2, OUTPUT);
-  digitalWrite(WB_IO2, LOW);
-  delay(1000);
-  digitalWrite(WB_IO2, HIGH);
-  Wire.begin();
+  sensor_init();
   serial_init();
   sd_init();
   ads_init();
@@ -53,6 +52,16 @@ void loop() {
   log_data();
   if (bleuart.available()) { ble_get(); }
   delay(sampling_freq);
+}
+
+void sensor_init(void) {
+  // 3V3_S
+  pinMode(WB_IO2, OUTPUT);
+  digitalWrite(WB_IO2, LOW);
+  delay(1000);
+  digitalWrite(WB_IO2, HIGH);
+  // I2C
+  Wire.begin();
 }
 
 void serial_init() {
@@ -119,6 +128,7 @@ void ble_get(void) {
   buffer = "";
   while (bleuart.available()) { buffer += (char)bleuart.read(); }
   new_freq = buffer.toInt();
+  // Allow new sample frequencies between 1s and 10s
   if ((new_freq >= 1000) && (new_freq <= 10000)) {
     sampling_freq = new_freq;
     Serial.print("BLEUart: Updated sampling frequency: ");
@@ -126,8 +136,7 @@ void ble_get(void) {
     Serial.println(" ms");
     if (logFile) {
       logFile.print(timestamp);
-      logFile.print(": ");
-      logFile.print("BLEUart: Updated sampling frequency: ");
+      logFile.print(": BLEUart: Updated sampling frequency: ");
       logFile.print(sampling_freq);
       logFile.println(" ms");
       logFile.flush();
@@ -143,8 +152,7 @@ void connect_callback(uint16_t conn_handle) {
   Serial.println(central_name);
   if (logFile) {
     logFile.print(timestamp);
-    logFile.print(": ");
-    logFile.print("Connected to ");
+    logFile.print(": Connected to ");
     logFile.println(central_name);
     logFile.flush();
   }
@@ -157,8 +165,7 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   Serial.println(reason, HEX);
   if (logFile) {
     logFile.print(timestamp);
-    logFile.print(": ");
-    logFile.print("Disconnected, reason = 0x");
+    logFile.print(": Disconnected, reason = 0x");
     logFile.println(reason, HEX);
     logFile.flush();
   }
@@ -175,10 +182,6 @@ void gps_gettime(void) {
           "%d-%02d-%02d,%02d:%02d:%02d",
           g_myGNSS.getYear(), g_myGNSS.getMonth(), g_myGNSS.getDay(),
           g_myGNSS.getHour(), g_myGNSS.getMinute(), g_myGNSS.getSecond());
-#if DEBUG
-  Serial.print("GPS Timestamp: ");
-  Serial.println(timestamp);
-#endif
 }
 
 void log_data(void) {
@@ -188,7 +191,7 @@ void log_data(void) {
   Serial.println(" V");
 #endif
   Serial.print("WETNESS PERCENTAGE: ");
-  wetness = (String)wetPercent + "%";
+  snprintf(wetness, sizeof(wetness), "%.2f%%", wetPercent);
   Serial.println(wetness);
   bleuart.print(wetness);
   if (csvFile) {
