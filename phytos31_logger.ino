@@ -38,6 +38,7 @@ File csvFile;
 File logFile;
 
 void setup() {
+  led_init();
   sensor_init();
   serial_init();
   sd_init();
@@ -52,6 +53,17 @@ void loop() {
   log_data();
   if (bleuart.available()) { ble_get(); }
   delay(sampling_freq);
+}
+
+void led_init(void) {
+  pinMode(LED_GREEN, OUTPUT);
+  pinMode(LED_BLUE, OUTPUT);
+  for (uint8_t i = 0; i < 20; i++) {
+    digitalToggle(LED_GREEN);
+    delay(100);
+    digitalToggle(LED_BLUE);
+    delay(100);
+  }
 }
 
 void sensor_init(void) {
