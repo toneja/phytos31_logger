@@ -1,6 +1,6 @@
 // Basic Datalogger Application for METER PHYTOS31 Leaf-Wetness Sensor
 //
-// Log data every 2 seconds; convert raw voltage output into % wetness
+// Log data every 5 seconds; convert raw voltage output into % wetness
 // Voltage output range can be different for each invididual sensor(?)
 //
 #define DEBUG 0
@@ -24,12 +24,11 @@ char wetness[8];
 
 // BLUETOOTH: control sample frequency
 BLEUart bleuart;
-uint16_t sampling_freq = 2000;
+uint16_t sampling_freq = 5; // seconds
 uint16_t new_freq;
 String buffer;
 
 // GPS: log timestamps
-// RAK12002 RTC module would be better for this
 SFE_UBLOX_GNSS g_myGNSS;
 char timestamp[19];
 
@@ -52,7 +51,7 @@ void loop() {
   gps_gettime();
   log_data();
   if (bleuart.available()) { ble_get(); }
-  delay(sampling_freq);
+  delay(sampling_freq * 1000);
 }
 
 void led_init(void) {
@@ -82,7 +81,7 @@ void serial_init() {
   while (!Serial) { delay(100); }
 #endif
   Serial.println("*** PHYTOS 31 DATALOGGER ***");
-  Serial.println("Sample every ~2 seconds...\n");
+  Serial.println("Sample every ~5 seconds...\n");
 }
 
 void sd_init(void) {
@@ -94,7 +93,7 @@ void sd_init(void) {
       logFile = SD.open("PHYTOS31.txt", FILE_WRITE);
       if (logFile) {
         logFile.println("*** PHYTOS 31 DATALOGGER ***");
-        logFile.println("Sample every ~2 seconds...\n");
+        logFile.println("Sample every ~5 seconds...\n");
         logFile.flush();
       }
       return;
@@ -139,18 +138,18 @@ void ble_init(void) {
 void ble_get(void) {
   buffer = "";
   while (bleuart.available()) { buffer += (char)bleuart.read(); }
-  new_freq = buffer.toInt();
-  // Allow new sample frequencies between 1s and 10s
-  if ((new_freq >= 1000) && (new_freq <= 10000)) {
+  new_freq = buffer.toInt() * 1000;
+  // Allow new sample frequencies between 1s and 1hr
+  if ((new_freq >= 1) && (new_freq <= 60 * 60)) {
     sampling_freq = new_freq;
     Serial.print("BLEUart: Updated sampling frequency: ");
-    Serial.print(sampling_freq);
-    Serial.println(" ms");
+    Serial.print(new_freq);
+    Serial.println(" s");
     if (logFile) {
       logFile.print(timestamp);
       logFile.print(": BLEUart: Updated sampling frequency: ");
-      logFile.print(sampling_freq);
-      logFile.println(" ms");
+      logFile.print(new_freq);
+      logFile.println(" s");
       logFile.flush();
     }
   }
@@ -197,19 +196,21 @@ void gps_gettime(void) {
 }
 
 void log_data(void) {
-#if DEBUG
-  Serial.print("WETNESS VOLTAGE: ");
-  Serial.print(wetRaw, 6);
-  Serial.println(" V");
-#endif
-  Serial.print("WETNESS PERCENTAGE: ");
   snprintf(wetness, sizeof(wetness), "%.2f%%", wetPercent);
+  Serial.print("WETNESS PERCENTAGE: ");
   Serial.println(wetness);
   bleuart.print(wetness);
   if (csvFile) {
     csvFile.print(timestamp);
     csvFile.print(",");
-    csvFile.println(wetness);
+    csvFile.print(wetness);
+    csvFile.print(",");
+    csvFile.println(wetRaw);
     csvFile.flush();
   }
+#if DEBUG
+  Serial.print("WETNESS VOLTAGE: ");
+  Serial.print(wetRaw, 6);
+  Serial.println(" V");
+#endif
 }
