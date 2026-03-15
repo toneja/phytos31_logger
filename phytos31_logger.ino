@@ -42,8 +42,8 @@ void setup() {
   serial_init();
   sd_init();
   ads_init();
-  ble_init();
   gps_init();
+  ble_init();
 }
 
 void loop() {
@@ -186,6 +186,12 @@ void gps_init(void) {
   g_myGNSS.begin();
   g_myGNSS.setI2COutput(COM_TYPE_UBX);
   g_myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
+  // Wait on the GPS for timestamps
+  while (g_myGNSS.getFixType() == 0) {
+    digitalToggle(LED_GREEN);
+    digitalToggle(LED_BLUE);
+    delay(100);
+  }
 }
 
 void gps_gettime(void) {
