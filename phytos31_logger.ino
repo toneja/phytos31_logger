@@ -190,11 +190,14 @@ void gps_init(void) {
   g_myGNSS.setI2COutput(COM_TYPE_UBX);
   g_myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
   // Wait on the GPS for timestamps
+  Serial.print("Searching for GPS fix...");
   while (g_myGNSS.getFixType() == 0) {
     digitalToggle(LED_GREEN);
     digitalToggle(LED_BLUE);
     delay(100);
+    Serial.print(".");
   }
+  Serial.println(" GPS fix acquired.");
 }
 
 void gps_gettime(void) {
