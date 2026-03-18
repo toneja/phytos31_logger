@@ -23,6 +23,7 @@ float wetMax = 1.023969;
 char wetness[8];
 
 // BLUETOOTH: control sample frequency
+BLEDfu bledfu;
 BLEUart bleuart;
 uint16_t sampling_freq = 5; // seconds
 uint16_t new_freq;
@@ -119,11 +120,13 @@ void ads_get(void) {
 
 void ble_init(void) {
   Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
+  Bluefruit.configPrphConn(92, BLE_GAP_EVENT_LENGTH_MIN, 16, 16);
   Bluefruit.begin();
   Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
   Bluefruit.setName("PHYTOS31 LOGGER");
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
+  bledfu.begin();
   bleuart.begin();
   Bluefruit.Advertising.addFlags(BLE_GAP_ADV_FLAGS_LE_ONLY_GENERAL_DISC_MODE);
   Bluefruit.Advertising.addTxPower();
