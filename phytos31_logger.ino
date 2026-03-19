@@ -35,7 +35,6 @@ char timestamp[19];
 
 // Output files
 File csvFile;
-File logFile;
 
 void setup() {
   led_init();
@@ -67,13 +66,10 @@ void led_init(void) {
 }
 
 void sensor_init(void) {
-  // 3V3_S
-  pinMode(WB_IO2, OUTPUT);
-  digitalWrite(WB_IO2, LOW);
   delay(1000);
-  digitalWrite(WB_IO2, HIGH);
   // I2C
   Wire.begin();
+  delay(1000); // give em a sec to wake up
 }
 
 void serial_init() {
@@ -87,22 +83,13 @@ void serial_init() {
 
 void sd_init(void) {
   Serial.print("Mounting SD Card...");
-  for (uint8_t i = 0; i < 10; i++) {
-    if (SD.begin()) {
-      Serial.println("Card mounted.\n");
-      csvFile = SD.open("PHYTOS31.csv", FILE_WRITE);
-      logFile = SD.open("PHYTOS31.txt", FILE_WRITE);
-      if (logFile) {
-        logFile.println("*** PHYTOS 31 DATALOGGER ***");
-        logFile.println("Sample every ~5 seconds...\n");
-        logFile.flush();
-      }
-      return;
-    } else {
-      Serial.print(".");
-      delay(1000);
-      SD.end();
+  if (SD.begin()) {
+    Serial.println("Card mounted.\n");
+    csvFile = SD.open("PHYTOS31.csv", FILE_WRITE);
+    if (csvFile) {
+      if (csvFile.size() == 0) { csvFile.println("Date,Time,Wet%,Voltage"); }
     }
+    return;
   }
   Serial.println("No SD Card found.\n");
 }
@@ -148,13 +135,6 @@ void ble_get(void) {
     Serial.print("BLEUart: Updated sampling frequency: ");
     Serial.print(new_freq);
     Serial.println(" s");
-    if (logFile) {
-      logFile.print(timestamp);
-      logFile.print(": BLEUart: Updated sampling frequency: ");
-      logFile.print(new_freq);
-      logFile.println(" s");
-      logFile.flush();
-    }
   }
 }
 
@@ -164,12 +144,6 @@ void connect_callback(uint16_t conn_handle) {
   connection->getPeerName(central_name, sizeof(central_name));
   Serial.print("Connected to ");
   Serial.println(central_name);
-  if (logFile) {
-    logFile.print(timestamp);
-    logFile.print(": Connected to ");
-    logFile.println(central_name);
-    logFile.flush();
-  }
 }
 
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
@@ -177,12 +151,6 @@ void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   (void) reason;
   Serial.print("Disconnected, reason = 0x");
   Serial.println(reason, HEX);
-  if (logFile) {
-    logFile.print(timestamp);
-    logFile.print(": Disconnected, reason = 0x");
-    logFile.println(reason, HEX);
-    logFile.flush();
-  }
 }
 
 void gps_init(void) {
