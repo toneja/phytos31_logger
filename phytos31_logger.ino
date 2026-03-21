@@ -4,11 +4,13 @@
 // Voltage output range can be different for each invididual sensor(?)
 //
 #define DEBUG 0
+#define SAMPLING_FREQ 5 // seconds
 
 #include <Adafruit_ADS1X15.h>
 #include <bluefruit.h>
 #include <SparkFun_u-blox_GNSS_Arduino_Library.h>
 #include <Wire.h>
+#include <Adafruit_BME680.h>
 #include "SD.h"
 
 // ADC: ADS1115 -> PHYTOS31
@@ -22,36 +24,43 @@ float wetMin = 0.350000;
 float wetMax = 1.023969;
 char wetness[8];
 
-// BLUETOOTH: control sample frequency
+// BLUETOOTH: OTA updates, bleuart output
 BLEDfu bledfu;
 BLEUart bleuart;
-uint16_t sampling_freq = 5; // seconds
-uint16_t new_freq;
-String buffer;
 
 // GPS: log timestamps
 SFE_UBLOX_GNSS g_myGNSS;
 char timestamp[19];
 
+// Onboard Temperature
+Adafruit_BME680 bme;
+
 // Output files
 File csvFile;
 
 void setup() {
+#if DEBUG
+  serial_init();
+#endif
   led_init();
   sensor_init();
-  serial_init();
-  sd_init();
-  ads_init();
-  gps_init();
-  ble_init();
+  // Required
+  if (!ble_init()) { led_error(); }
+  if (!sd_init())  { led_error(); }
+  if (!ads_init()) { led_error(); }
+  if (!gps_init()) { led_error(); }
+  // Optional
+  bme680_init();
 }
 
 void loop() {
-  ads_get();
+  digitalWrite(LED_GREEN, HIGH);
   gps_gettime();
+  ads_get();
   log_data();
-  if (bleuart.available()) { ble_get(); }
-  delay(sampling_freq * 1000);
+  bme680_get();
+  digitalWrite(LED_GREEN, LOW);
+  delay(SAMPLING_FREQ * 1000);
 }
 
 void led_init(void) {
@@ -65,6 +74,15 @@ void led_init(void) {
   }
 }
 
+void led_error(void) {
+  while (1) {
+    digitalToggle(LED_GREEN);
+    delay(500);
+    digitalToggle(LED_BLUE);
+    delay(500);
+  }
+}
+
 void sensor_init(void) {
   delay(1000);
   // I2C
@@ -72,31 +90,47 @@ void sensor_init(void) {
   delay(1000); // give em a sec to wake up
 }
 
+#if DEBUG
 void serial_init() {
   Serial.begin(115200);
-#if DEBUG
-  while (!Serial) { delay(100); }
-#endif
+  // while (!Serial) { delay(100); }
   Serial.println("*** PHYTOS 31 DATALOGGER ***");
   Serial.println("Sample every ~5 seconds...\n");
 }
+#endif
 
-void sd_init(void) {
-  Serial.print("Mounting SD Card...");
+bool sd_init(void) {
   if (SD.begin()) {
-    Serial.println("Card mounted.\n");
     csvFile = SD.open("PHYTOS31.csv", FILE_WRITE);
     if (csvFile) {
-      if (csvFile.size() == 0) { csvFile.println("Date,Time,Wet%,Voltage"); }
+      if (csvFile.size() == 0) {
+        csvFile.println("Date,Time,Wetness,Voltage");
+        csvFile.flush();
+      }
+      return true;
+    } else {
+#if DEBUG
+      Serial.println("ERROR: unable to write to CSV file.");
+#endif
     }
-    return;
+  } else {
+#if DEBUG
+    Serial.println("ERROR: No SD Card found.");
+#endif
   }
-  Serial.println("No SD Card found.\n");
+  return false;
 }
 
-void ads_init(void) {
+bool ads_init(void) {
   ads.setGain(GAIN_FOUR); // 4x gain   +/- 1.024V  1 bit = 0.5mV
-  ads.begin();
+  if (ads.begin()) {
+    return true;
+  } else {
+#if DEBUG
+    Serial.println("ERROR: ADC Not detected.");
+#endif
+    return false;
+  }
 }
 
 void ads_get(void) {
@@ -105,11 +139,16 @@ void ads_get(void) {
   wetPercent = ((wetRaw - wetMin) / (wetMax - wetMin) * 100.0);
 }
 
-void ble_init(void) {
+bool ble_init(void) {
   Bluefruit.configPrphBandwidth(BANDWIDTH_MAX);
   Bluefruit.configPrphConn(92, BLE_GAP_EVENT_LENGTH_MIN, 16, 16);
-  Bluefruit.begin();
-  Bluefruit.setTxPower(4);    // Check bluefruit.h for supported values
+  if (!Bluefruit.begin()) {
+#if DEBUG
+    Serial.println("ERROR: Unable to start Bluetooth.");
+#endif
+    return false;
+  }
+  Bluefruit.setTxPower(8);    // Check bluefruit.h for supported values
   Bluefruit.setName("PHYTOS31 LOGGER");
   Bluefruit.Periph.setConnectCallback(connect_callback);
   Bluefruit.Periph.setDisconnectCallback(disconnect_callback);
@@ -123,49 +162,53 @@ void ble_init(void) {
   Bluefruit.Advertising.setInterval(32, 244);
   Bluefruit.Advertising.setFastTimeout(30);
   Bluefruit.Advertising.start(0);
-}
-
-void ble_get(void) {
-  buffer = "";
-  while (bleuart.available()) { buffer += (char)bleuart.read(); }
-  new_freq = buffer.toInt() * 1000;
-  // Allow new sample frequencies between 1s and 1hr
-  if ((new_freq >= 1) && (new_freq <= 60 * 60)) {
-    sampling_freq = new_freq;
-    Serial.print("BLEUart: Updated sampling frequency: ");
-    Serial.print(new_freq);
-    Serial.println(" s");
-  }
+  return true;
 }
 
 void connect_callback(uint16_t conn_handle) {
   BLEConnection* connection = Bluefruit.Connection(conn_handle);
   char central_name[32] = { 0 };
   connection->getPeerName(central_name, sizeof(central_name));
+#if DEBUG
   Serial.print("Connected to ");
   Serial.println(central_name);
+#endif
 }
 
 void disconnect_callback(uint16_t conn_handle, uint8_t reason) {
   (void) conn_handle;
   (void) reason;
+#if DEBUG
   Serial.print("Disconnected, reason = 0x");
   Serial.println(reason, HEX);
+#endif
 }
 
-void gps_init(void) {
-  g_myGNSS.begin();
+bool gps_init(void) {
+  if (!g_myGNSS.begin()) {
+#if DEBUG
+    Serial.println("ERROR: GPS not detected.");
+#endif
+    return false;
+  }
   g_myGNSS.setI2COutput(COM_TYPE_UBX);
   g_myGNSS.saveConfigSelective(VAL_CFG_SUBSEC_IOPORT);
   // Wait on the GPS for timestamps
+#if DEBUG
   Serial.print("Searching for GPS fix...");
+#endif
   while (g_myGNSS.getFixType() == 0) {
     digitalToggle(LED_GREEN);
     digitalToggle(LED_BLUE);
-    delay(100);
+    delay(200);
+#if DEBUG
     Serial.print(".");
+#endif
   }
+#if DEBUG
   Serial.println(" GPS fix acquired.");
+#endif
+  return true;
 }
 
 void gps_gettime(void) {
@@ -175,20 +218,38 @@ void gps_gettime(void) {
           g_myGNSS.getHour(), g_myGNSS.getMinute(), g_myGNSS.getSecond());
 }
 
+void bme680_init(void) {
+  if (!bme.begin(0x76)) {
+#if DEBUG
+    Serial.println("WARNING: BME not detected.");
+#endif
+  }
+  bme.setTemperatureOversampling(BME680_OS_8X);
+  // save power
+  bme.setGasHeater(0, 0);
+}
+
+void bme680_get(void) {
+  bme.performReading();
+#if DEBUG
+  Serial.print("Temperature = ");
+  Serial.print(bme.temperature * 1.8 + 32);
+  Serial.println(" *F");
+#endif
+}
+
 void log_data(void) {
   snprintf(wetness, sizeof(wetness), "%.2f%%", wetPercent);
+  if (bleuart.notifyEnabled()) { bleuart.print(wetness); }
+  csvFile.print(timestamp);
+  csvFile.print(",");
+  csvFile.print(wetness);
+  csvFile.print(",");
+  csvFile.println(wetRaw, 6);
+  csvFile.flush();
+#if DEBUG
   Serial.print("WETNESS PERCENTAGE: ");
   Serial.println(wetness);
-  bleuart.print(wetness);
-  if (csvFile) {
-    csvFile.print(timestamp);
-    csvFile.print(",");
-    csvFile.print(wetness);
-    csvFile.print(",");
-    csvFile.println(wetRaw);
-    csvFile.flush();
-  }
-#if DEBUG
   Serial.print("WETNESS VOLTAGE: ");
   Serial.print(wetRaw, 6);
   Serial.println(" V");
